@@ -1,0 +1,37 @@
+# ── Dependencies ──────────────────────────────────────────────────────────────
+node_modules/
+
+# ── Next.js ───────────────────────────────────────────────────────────────────
+.next/
+out/
+build/
+
+# ── Environment / Secrets ─────────────────────────────────────────────────────
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# ── Google credentials ────────────────────────────────────────────────────────
+credentials.json
+gsc-credentials.json
+gsc_token.json
+*.key.json
+service-account*.json
+
+# ── Claude local settings (may contain allowed command history) ───────────────
+.claude/
+
+# ── OS / Editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+
+# ── TypeScript build cache ────────────────────────────────────────────────────
+tsconfig.tsbuildinfo

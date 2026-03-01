@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Thin scrollbar for the table wrapper */
+.thin-scroll::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+.thin-scroll::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 3px;
+}
