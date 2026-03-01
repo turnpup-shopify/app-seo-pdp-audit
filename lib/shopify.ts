@@ -1,33 +1,40 @@
 /**
  * Shopify GraphQL / ShopifyQL client.
- * Executes a ShopifyQL query via the Admin GraphQL API and returns typed rows.
+ * Updated for API 2025-10:
+ *   - No more `... on TableResponse` fragment — response is ShopifyqlQueryResponse directly
+ *   - `rowData` → `rows` (now a JSON scalar returning array of objects, not arrays)
+ *   - `parseErrors` is now a list of strings, not objects
+ *   - Named date ranges: last_30_days/last_7_days removed; use last_month/last_week/last_quarter etc.
  */
 
 const SHOPIFYQL_GQL = `
   query shopifyqlQuery($q: String!) {
     shopifyqlQuery(query: $q) {
-      ... on TableResponse {
-        tableData {
-          rowData
-          columns {
-            name
-            dataType
-          }
+      tableData {
+        columns {
+          name
+          dataType
         }
+        rows
       }
-      parseErrors {
-        code
-        message
-        range {
-          start { line column }
-          end   { line column }
-        }
-      }
+      parseErrors
     }
   }
 `
 
-function buildQuery(startDate: string, endDate: string): string {
+/**
+ * Map a number of days to the closest valid ShopifyQL named date period.
+ * As of 2025-10, explicit date ranges (YYYY-MM-DD) and last_N_days are unsupported.
+ */
+function daysToShopifyPeriod(days: number): string {
+  if (days <= 7)  return 'last_week'
+  if (days <= 30) return 'last_month'
+  if (days <= 90) return 'last_quarter'
+  return 'last_year'
+}
+
+function buildQuery(days: number): string {
+  const period = daysToShopifyPeriod(days)
   return `
     FROM sessions
     SHOW
@@ -45,25 +52,23 @@ function buildQuery(startDate: string, endDate: string): string {
       AND landing_page_url NOT CONTAINS 'order'
     )
     GROUP BY landing_page_path
-    DURING ${startDate}:${endDate}
+    DURING ${period}
     ORDER BY sessions DESC
   `
 }
 
 function castValue(
-  value: string | null,
+  value: string | number | null,
   dataType: string
 ): string | number | null {
   if (value === null || value === '') return null
   const dt = dataType.toLowerCase()
-  if (
-    ['float', 'decimal', 'percentage', 'rate', 'money'].includes(dt)
-  ) {
-    const n = parseFloat(value)
+  if (['float', 'decimal', 'percentage', 'rate', 'money'].includes(dt)) {
+    const n = parseFloat(String(value))
     return isNaN(n) ? null : n
   }
   if (['int', 'integer', 'count'].includes(dt)) {
-    const n = parseInt(value, 10)
+    const n = parseInt(String(value), 10)
     return isNaN(n) ? null : n
   }
   return value
@@ -73,11 +78,10 @@ export async function getShopifyLandingPageData(
   shopUrl: string,
   accessToken: string,
   apiVersion: string,
-  startDate: string,
-  endDate: string
+  days: number
 ): Promise<Record<string, string | number | null>[]> {
   const endpoint = `https://${shopUrl}/admin/api/${apiVersion}/graphql.json`
-  const query = buildQuery(startDate, endDate)
+  const shopifyqlQuery = buildQuery(days)
 
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -85,16 +89,14 @@ export async function getShopifyLandingPageData(
       'Content-Type': 'application/json',
       'X-Shopify-Access-Token': accessToken,
     },
-    body: JSON.stringify({ query: SHOPIFYQL_GQL, variables: { q: query } }),
+    body: JSON.stringify({ query: SHOPIFYQL_GQL, variables: { q: shopifyqlQuery } }),
   })
 
   if (response.status === 401) {
     throw new Error('Shopify authentication failed — check SHOPIFY_ACCESS_TOKEN.')
   }
   if (response.status === 404) {
-    throw new Error(
-      `Shopify endpoint not found — check SHOPIFY_SHOP_URL: "${shopUrl}"`
-    )
+    throw new Error(`Shopify endpoint not found — check SHOPIFY_SHOP_URL: "${shopUrl}"`)
   }
   if (!response.ok) {
     throw new Error(`Shopify API error ${response.status}: ${response.statusText}`)
@@ -109,24 +111,23 @@ export async function getShopifyLandingPageData(
 
   const qlResult = data?.data?.shopifyqlQuery
 
+  // parseErrors is now a list of strings
   if (qlResult?.parseErrors?.length) {
-    const msgs = qlResult.parseErrors
-      .map((e: { message: string }) => e.message)
-      .join('; ')
-    throw new Error(`ShopifyQL parse error: ${msgs}`)
+    throw new Error(`ShopifyQL error: ${qlResult.parseErrors.join('; ')}`)
   }
 
   const tableData = qlResult?.tableData
-  if (!tableData?.columns?.length || !tableData?.rowData?.length) return []
+  if (!tableData?.columns?.length || !tableData?.rows?.length) return []
 
   const columns: Array<{ name: string; dataType: string }> = tableData.columns
-  const rows: Array<Array<string | null>> = tableData.rowData
+  // rows is now an array of JSON objects (not array of arrays)
+  const rows: Array<Record<string, string | number | null>> = tableData.rows
 
   return rows.map((row) => {
     const record: Record<string, string | number | null> = {}
-    columns.forEach((col, i) => {
-      record[col.name] = castValue(row[i] ?? null, col.dataType)
-    })
+    for (const col of columns) {
+      record[col.name] = castValue(row[col.name] ?? null, col.dataType)
+    }
     return record
   })
 }

@@ -42,8 +42,7 @@ export async function GET(req: NextRequest) {
         shopUrl,
         shopToken,
         shopVersion,
-        start,
-        end
+        days
       )
     } catch (err: unknown) {
       warnings.push(`Shopify: ${err instanceof Error ? err.message : String(err)}`)
